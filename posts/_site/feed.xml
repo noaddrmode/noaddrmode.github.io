@@ -1,0 +1,343 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="http://localhost:4000/posts/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/posts/" rel="alternate" type="text/html" /><updated>2023-02-05T00:25:14-08:00</updated><id>http://localhost:4000/posts/feed.xml</id><title type="html">noaddrmode</title><entry><title type="html">Rate Limit Requests With Fail2ban</title><link href="http://localhost:4000/posts/sysadmin/2023/02/05/fail2ban.html" rel="alternate" type="text/html" title="Rate Limit Requests With Fail2ban" /><published>2023-02-05T23:51:54-08:00</published><updated>2023-02-05T23:51:54-08:00</updated><id>http://localhost:4000/posts/sysadmin/2023/02/05/fail2ban</id><content type="html" xml:base="http://localhost:4000/posts/sysadmin/2023/02/05/fail2ban.html">&lt;p&gt;fail2ban&lt;/p&gt;
+&lt;ol&gt;
+  &lt;li&gt;scans log files - &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/var/log/apach2/access.log&lt;/code&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/var/log/nginx/error.log&lt;/code&gt;, etc,&lt;/li&gt;
+  &lt;li&gt;search for requests defined by filter in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/fail2ban/filter.d/*&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;take actions (e.g., ban IP addresses) in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/fail2ban/action.d/&lt;/code&gt;&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h2 id=&quot;install-fail2ban&quot;&gt;Install fail2ban&lt;/h2&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;sudo apt install fail2ban
+sudo systemctl enable fail2ban.service
+sudo systemctl start fail2ban.service
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2 id=&quot;modifying-config&quot;&gt;Modifying Config&lt;/h2&gt;
+
+&lt;p&gt;Default config is in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/fail2ban/jail.conf&lt;/code&gt;. However, don’t modify this file. Create local jail file instead.&lt;/p&gt;
+
+&lt;h3 id=&quot;creating-jail-file&quot;&gt;Creating Jail File&lt;/h3&gt;
+
+&lt;p&gt;Create a new jail file in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/fail2ban/jail.d/&lt;/code&gt;&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;vim /etc/fail2ban/jail.d/01-apache-ratelimit.local
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Edit the file as below&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;[apache-ratelimit-1]
+
+enabled = true
+filter = apache-ratelimit
+action = iptables-multiport[name=apache-ratelimit, port=&quot;http,https&quot;]
+logpath = /var/log/apache2/access.log
+findtime = 86400
+bantime = 1d
+maxretry = 10
+ignoreip = 127.0.0.0/8 172.16.0.0/12
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;filter&lt;/code&gt;	- is the name of filter this jail will use (&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/fail2ban/filter.d/apache-ratelimit.conf&lt;/code&gt;)&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;action&lt;/code&gt; - what fail2ban will do when the request matches the filter. Here, it uses &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/fail2ban/action.d/iptables-multiport.conf&lt;/code&gt; action. If you look at that file, it uses the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;iptables&lt;/code&gt; to ban the IP address. You can pass parameters to the action file. Here, it passes &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;and&lt;/code&gt;.&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;logpath&lt;/code&gt; - the log file fail2ban will scan. &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/var/log/apache2/access.log&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;findtime&lt;/code&gt; - specifies the time window in which the rate limiting will be applied (86400 seconds - 1day)&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;bantime&lt;/code&gt; - specifies the length of time that an IP address will be banned for if it exceeds the rate limit (1d - 1 day)&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;maxretry&lt;/code&gt; - specifies the number of allowed retries within the specified time window before an IP address is banned.&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ignoreip&lt;/code&gt; - whitelist IP range&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;With above configuration, it will ban IP address for 1 day if there are more than 10 requests within 24 hours.&lt;/p&gt;
+
+&lt;p&gt;Time format can be found in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;man 5 jail.conf&lt;/code&gt;. Search for &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TIME ABBREVIATION FORMAT&lt;/code&gt;. You can use convert time abbreviation to seconds with&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# 1 day, 12 hours, 30 minutes
+$ fail2ban-client --str2sec 1d12h30m
+131400
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2 id=&quot;writing-filter&quot;&gt;Writing Filter&lt;/h2&gt;
+
+&lt;p&gt;Above jail file use filter &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;apache-ratelimit&lt;/code&gt;.&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;filter = apache-ratelimit
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;So, create the filter in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/fail2ban/filter.d/apache-ratelimit.conf&lt;/code&gt;.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;[Definition]
+
+# Example apache2 log /var/log/apache2/access.log
+# 192.168.56.1 - - [22/Dec/2022:19:18:47 +0000] &quot;GET /api/v1/services/id/FFF0001 HTTP/1.1&quot; 404 493 &quot;-&quot; &quot;Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36&quot;
+
+failregex = ^ -.*GET /api/v1/services/id/.*$
+ignoreregex =
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Here, it searches for &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;GET&lt;/code&gt; request to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/api/v1/services/id/&lt;/code&gt;&lt;/p&gt;
+
+&lt;p&gt;Alternatively, you can search &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;429&lt;/code&gt; HTTP response code from &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;X-RateLimit-Limit&lt;/code&gt;)&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;failregex = ^ -.*&quot;GET /api/v1/services/id/.*&quot; 429 .*$
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Or, search for POST, GET, HEAD requests&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;failregex = ^ -.*(POST|HEAD|GET) /api/v1/services/id/.*$
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Modify &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;fail2regex&lt;/code&gt; based on log file. Or, reuse the existing filters in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/fail2ban/filter.d/&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h3 id=&quot;testing-failregex&quot;&gt;Testing failregex&lt;/h3&gt;
+&lt;p&gt;You can test if your regex is correct with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;fail2ban-regex&lt;/code&gt; command.&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;fail2ban-regex /var/log/apache2/access.log /etc/fail2ban/filter.d/apache-ratelimit.conf 
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Look at the output for missed lines&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;Lines: 9 lines, 0 ignored, 6 matched, 3 missed
+[processed in 0.02 sec]
+
+|- Missed line(s):
+|  192.168.56.1 - - [22/Dec/2022:18:51:17 +0000] &quot;GET / HTTP/1.1&quot; 200 3460 &quot;-&quot; &quot;Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36&quot;
+|  192.168.56.1 - - [22/Dec/2022:18:51:17 +0000] &quot;GET /icons/ubuntu-logo.png HTTP/1.1&quot; 200 3607 &quot;http://192.168.56.101/&quot; &quot;Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36&quot;
+|  192.168.56.1 - - [22/Dec/2022:18:51:18 +0000] &quot;GET / HTTP/1.1&quot; 200 3459 &quot;-&quot; &quot;Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36&quot;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Here &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;3 missed&lt;/code&gt; with our current regex. If needed, adjust &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;failregex&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;restart-fail2ban&quot;&gt;Restart fail2ban&lt;/h2&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;sudo systemctl stop fail2ban.service
+sudo systemctl start fail2ban.service
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2 id=&quot;check-fail2ban-status&quot;&gt;Check fail2ban status&lt;/h2&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;fail2ban-client status
+Status
+|- Number of jail:	2
+`- Jail list:	apache-ratelimit-1, sshd
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Here we have 2 jails, one is default jail (sshd). The other (&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;apache-ratelimit-1&lt;/code&gt;) is the jail we created in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/fail2ban/jail.d/01-apache-ratelimit.local&lt;/code&gt;&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;[apache-ratelimit-1]
+
+enabled = true
+...
+...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;So, two jails are currently active.&lt;/p&gt;
+
+&lt;h2 id=&quot;testing&quot;&gt;Testing&lt;/h2&gt;
+&lt;p&gt;Modify the jail to test if fail2ban works properly. Reduce the bantime.&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;vim /etc/fail2ban/jail.d/01-apache-ratelimit.local
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;Ban IP address for 5 minutes if there are more than 5 GET request within 10 minutes.&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;findtime = 600
+bantime = 300
+maxretry = 5
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;Restart fail2ban. Make sure fail2ban is running and no error.&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;sudo systemctl restart fail2ban.service
+fail2ban-client status
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;Make some HTTP requests. After 5 retries, you can no longer access the page.&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;This site can’t be reached
+
+ERR_CONNECTION_REFUSED
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Check the status&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;fail2ban-client status apache-ratelimit-1
+
+Status for the jail: apache-ratelimit-1
+|- Filter
+|  |- Currently failed:	0
+|  |- Total failed:	5
+|  `- File list:	/var/log/apache2/access.log
+`- Actions
+   |- Currently banned:	1
+   |- Total banned:	1
+   `- Banned IP list:	192.168.56.1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;You will see, it bans &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;192.168.56.1&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Check the iptables. Remember that we use iptables in jail file
+&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;action = iptables-multiport[name=invoice-ratelimit, port=&quot;http,https&quot;]&lt;/code&gt;&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@u2204:# iptables -S
+-P INPUT ACCEPT
+-P FORWARD ACCEPT
+-P OUTPUT ACCEPT
+-N f2b-apache-ratelimit
+-A INPUT -p tcp -m multiport --dports 80,443 -j f2b-apache-ratelimit
+-A f2b-apache-ratelimit -s 192.168.56.1/32 -j REJECT --reject-with icmp-port-unreachable
+-A f2b-apache-ratelimit -j RETURN
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2 id=&quot;unban-ip-address&quot;&gt;Unban IP address&lt;/h2&gt;
+&lt;p&gt;If you make a mistake, unban IP address.&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;fail2ban-client set apache-ratelimit-1 unbanip 192.168.56.1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;Check status again&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;fail2ban-client status apache-ratelimit-1
+Status for the jail: apache-ratelimit-1
+|- Filter
+|  |- Currently failed:	0
+|  |- Total failed:	5
+|  `- File list:	/var/log/apache2/access.log
+`- Actions
+   |- Currently banned:	0
+   |- Total banned:	1
+   `- Banned IP list:	
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Retry HTTP request to see if it is working again.&lt;/p&gt;
+
+&lt;h2 id=&quot;unban-all-ip-address&quot;&gt;Unban all IP address&lt;/h2&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;fail2ban-client unban --all
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2 id=&quot;check-the-log&quot;&gt;Check the log&lt;/h2&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ cat /var/log/fail2ban.log
+2022-12-22 22:16:30,025 fail2ban.filter         [5577]: INFO    [apache-ratelimit-1] Found 192.168.56.1 - 2022-12-22 22:16:29
+2022-12-22 22:16:33,141 fail2ban.filter         [5577]: INFO    [apache-ratelimit-1] Found 192.168.56.1 - 2022-12-22 22:16:32
+2022-12-22 22:16:33,574 fail2ban.filter         [5577]: INFO    [apache-ratelimit-1] Found 192.168.56.1 - 2022-12-22 22:16:33
+2022-12-22 22:16:34,292 fail2ban.filter         [5577]: INFO    [apache-ratelimit-1] Found 192.168.56.1 - 2022-12-22 22:16:34
+2022-12-22 22:16:34,583 fail2ban.filter         [5577]: INFO    [apache-ratelimit-1] Found 192.168.56.1 - 2022-12-22 22:16:34
+2022-12-22 22:16:35,175 fail2ban.actions        [5577]: NOTICE  [apache-ratelimit-1] Ban 192.168.56.1
+2022-12-22 22:21:06,125 fail2ban.actions        [5577]: NOTICE  [apache-ratelimit-1] Unban 192.168.56.1
+2022-12-22 22:22:10,139 fail2ban.filter         [5577]: INFO    [apache-ratelimit-1] Found 192.168.56.1 - 2022-12-22 22:22:09
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;grep &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Ban&lt;/code&gt; or &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Unban&lt;/code&gt; from log file&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ grep Ban /var/log/fail2ban.log 
+2022-12-22 19:19:02,326 fail2ban.actions        [4815]: NOTICE  [z-invoice] Ban 192.168.56.1
+2022-12-22 22:16:35,175 fail2ban.actions        [5577]: NOTICE  [apache-ratelimit-1] Ban 192.168.56.1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2 id=&quot;redirecting-to-another-web-page-instead-of-dropping-in-iptables&quot;&gt;Redirecting to Another Web Page Instead of Dropping in iptables&lt;/h2&gt;
+
+&lt;p&gt;Ideally, it should be done at application level. &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;iptables&lt;/code&gt; work at different layer, and doesn’t know URL redirection. However, iptables can be used to redirect port 80,443 to another port. Instead of default &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;filter&lt;/code&gt; table, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;nat&lt;/code&gt; table should be used. Make sure to use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;PREROUTING&lt;/code&gt; chain.&lt;/p&gt;
+
+&lt;p&gt;Example iptable commands&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# check rules
+iptables -t nat -S 
+
+# create rules
+iptables -t nat -N TEST
+iptables -t nat -A TEST -j RETURN
+iptables -t nat -I PREROUTING -p tcp -m multiport --dports 80,443 -j TEST
+iptables -t nat -I TEST 1 -s 192.168.56.1/32 -p tcp -j REDIRECT --to-port 8080
+
+# recheck rules
+iptables -t nat -S
+
+# delete rules
+iptables -t nat -D 
+iptables -t nat -F 
+iptables -t nat -X 
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h3 id=&quot;modifying-fail2ban&quot;&gt;Modifying fail2ban&lt;/h3&gt;
+&lt;p&gt;Create a new custom action.&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;vim /etc/fail2ban/action.d/iptables-redirect.local
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Edit as the file below&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# Fail2Ban configuration file
+#
+# Author: Cyril Jaquier
+# Modified by Yaroslav Halchenko for multiport banning
+#
+
+[INCLUDES]
+
+before = iptables-common.conf
+
+[Definition]
+
+# Option:  actionstart
+# Notes.:  command executed on demand at the first ban (or at the start of Fail2Ban if actionstart_on_demand is set to false).
+# Values:  CMD
+#
+actionstart =  -N f2b-
+               -A f2b- -j 
+               -I  -p  -m multiport --dports  -j f2b-
+
+# Option:  actionstop
+# Notes.:  command executed at the stop of jail (or at the end of Fail2Ban)
+# Values:  CMD
+#
+actionstop =  -D  -p  -m multiport --dports  -j f2b-
+             
+              -X f2b-
+
+# Option:  actioncheck
+# Notes.:  command executed once before each actionban command
+# Values:  CMD
+#
+actioncheck =  -n -L  | grep -q &apos;f2b-[ \t]&apos;
+
+# Option:  actionban
+# Notes.:  command executed when banning an IP. Take care that the
+#          command is executed with Fail2Ban user rights.
+# Tags:    See jail.conf(5) man page
+# Values:  CMD
+#
+# actionban =  -I f2b- 1 -s  -j 
+actionban =  -I f2b- 1 -s  -p  -j 
+
+# Option:  actionunban
+# Notes.:  command executed when unbanning an IP. Take care that the
+#          command is executed with Fail2Ban user rights.
+# Tags:    See jail.conf(5) man page
+# Values:  CMD
+#
+# actionunban =  -D f2b- -s  -j 
+actionunban =  -D f2b- -s  -p  -j 
+
+[Init]
+
+iptables = iptables  -t nat
+chain = PREROUTING
+blocktype = REDIRECT --to-port 8080
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Edit the jail file, and use the new &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;action&lt;/code&gt;&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;vim /etc/fail2ban/01-apache-ratelimit.local
+
+[apache-ratelimit-1]
+
+enabled = true
+filter = apache-ratelimit
+action = iptables-redirect[name=invoice-ratelimit, port=&quot;http,https&quot;]
+logpath = /var/log/apache2/access.log
+findtime = 600
+bantime = 300
+maxretry = 5
+ignoreip = 127.0.0.0/8
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Stop and start fail2ban.&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;systemctl stop fail2ban.service
+systemctl start fail2ban.service
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Now, open port 8080 in apache for the redirected page.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;mkdir -p /var/www/ratelimit
+echo &quot;Request Limit Exceeded! Retry again tomorrow.&quot; &amp;amp;gt; /var/www/ratelimit/index.html
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Enable apache mode rewrite&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;a2enmod rewrite
+systemctl restart apache2
+apachectl -M | grep rewrite    
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Open a unused port (8080). Redirect all requests to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/index.html&lt;/code&gt;&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ServerAdmin webmaster@localhost
+DocumentRoot /var/www/ratelimit
+ErrorLog ${APACHE_LOG_DIR}/error.log
+CustomLog ${APACHE_LOG_DIR}/access.log combined
+RewriteEngine on
+RewriteCond %{REQUEST_URI} !=/index.html
+RewriteRule ^ /index.html [R=301]
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2 id=&quot;other-possible-filter-to-use&quot;&gt;Other possible filter to use&lt;/h2&gt;
+&lt;p&gt;Nginx Rate Limiting - &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/fail2ban/filter.d/nginx-limit-req.conf&lt;/code&gt;&lt;/p&gt;</content><author><name></name></author><category term="sysadmin" /><summary type="html">fail2ban scans log files - /var/log/apach2/access.log, /var/log/nginx/error.log, etc, search for requests defined by filter in /etc/fail2ban/filter.d/* take actions (e.g., ban IP addresses) in /etc/fail2ban/action.d/</summary></entry></feed>
